@@ -89,7 +89,7 @@ sudo apt install git git-lfs
 2. Clone the repo.
 
 ```sh
-git clone https://github.com/tenstorrent/tt-metal.git --recurse-submodules
+git clone https://github.com/neel-kla/tt-metal --recurse-submodules
 cd tt-metal
 git submodule foreach 'git lfs fetch --all && git lfs pull'
 ```
