@@ -22,14 +22,13 @@ using namespace std;
 using namespace tt;
 using namespace tt::tt_metal;
 
-
 /**
  * @brief Create a random vector of bfloat16 with integral numbers
- * 
- * @param num_bytes 
- * @param rand_max_float 
- * @param seed 
- * @return std::vector<bfloat16> 
+ *
+ * @param num_bytes
+ * @param rand_max_float
+ * @param seed
+ * @return std::vector<bfloat16>
  */
 inline std::vector<bfloat16> create_random_vector_of_bfloat16_integer(
     uint32_t num_bytes, uint16_t rand_max_float, int seed) {
@@ -46,4 +45,27 @@ inline std::vector<bfloat16> create_random_vector_of_bfloat16_integer(
 using namespace tt::tt_metal;
 
 int main(int argc, char **argv) {
+    if (getenv("TT_METAL_SLOW_DISPATCH_MODE") != nullptr) {
+        TT_THROW("Test not supported w/ slow dispatch, exiting");
+    }
+
+    bool pass = true;
+
+    try {
+    } catch (const std::exception &e) {
+        tt::log_error(tt::LogTest, "Test failed with exception!");
+        tt::log_error(tt::LogTest, "{}", e.what());
+
+        throw;
+    }
+
+    if (pass) {
+        tt::log_info(tt::LogTest, "Test Passed");
+    } else {
+        TT_THROW("Test Failed");
+    }
+
+    TT_FATAL(pass);
+
+    return 0;
 }
