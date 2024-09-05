@@ -147,6 +147,7 @@ void calculateHistogramBatched(
 void histogram1d_single_core(
     std::vector<bfloat16>& inImage,
     std::vector<bfloat16>& outputHistogram,
+    std::vector<bfloat16>& outImage,
     uint32_t W,
     uint32_t H,
     uint32_t I,
@@ -223,13 +224,13 @@ void histogram1d_single_core(
             .set_page_size(src0_cb_index, single_tile_size);
     auto cb_src0 = tt_metal::CreateCircularBuffer(program, core, cb_src0_config);
 
-    uint32_t src1_cb_index = CB::c_in1;  // 1
+    uint32_t src1_cb_index = CB::c_out0;  // 1
     CircularBufferConfig cb_src1_config =
         CircularBufferConfig(num_input_tiles * single_tile_size, {{src1_cb_index, cb_data_format}})
             .set_page_size(src1_cb_index, single_tile_size);
     auto cb_src1 = tt_metal::CreateCircularBuffer(program, core, cb_src1_config);
 
-    uint32_t output_cb_index = CB::c_out0;  // output operands start at index 16
+    uint32_t output_cb_index = CB::c_out1;  // output operands start at index 16
     uint32_t num_output_tiles = 2;
     CircularBufferConfig cb_output_config =
         CircularBufferConfig(num_output_tiles * single_tile_size, {{output_cb_index, cb_data_format}})
@@ -240,13 +241,13 @@ void histogram1d_single_core(
      * Specify data movement kernels for reading/writing data to/from
      * DRAM.
      */
-    KernelHandle unary_reader_kernel_id = CreateKernel(
+    KernelHandle input_image_reader_kernel_id = CreateKernel(
         program,
         "tt_metal/programming_examples/contributed/histogram1d_single_core/kernels/dataflow/input_image_reader.cpp",
         core,
         DataMovementConfig{.processor = DataMovementProcessor::RISCV_1, .noc = NOC::RISCV_1_default});
 
-    KernelHandle unary_writer_kernel_id = CreateKernel(
+    KernelHandle output_image_writer_kernel_id = CreateKernel(
         program,
         "tt_metal/programming_examples/contributed/histogram1d_single_core/kernels/dataflow/output_image_writer.cpp",
         core,
@@ -264,11 +265,46 @@ void histogram1d_single_core(
 
     auto histogram_single_core_kernel_id = tt_metal::CreateKernel(
         program,
-        "tt_metal/programming_examples/contributed/mhistogram1d_single_core/kernels/compute/histogram_compute1d.cpp",
+        "tt_metal/programming_examples/contributed/histogram1d_single_core/kernels/compute/histogram_compute1d.cpp",
         core,
         tt_metal::ComputeConfig{.math_fidelity = math_fidelity, .compile_args = compute_args}
 
     );
+
+    /*
+     * Configure program and runtime kernel arguments, then execute.
+     */
+    SetRuntimeArgs(
+        program,
+        input_image_reader_kernel_id,
+        core,
+        {
+            src_image_addr,
+            static_cast<uint32_t>(src_image_dram_buffer->noc_coordinates().x),
+            static_cast<uint32_t>(src_image_dram_buffer->noc_coordinates().y),
+            Wt*Ht, // Total number of tiles to read from input image
+        });
+
+    SetRuntimeArgs(
+        program,
+        output_image_writer_kernel_id,
+        core,
+        {
+            dst_image_addr, 
+            static_cast<uint32_t>(dst_image_dram_buffer->noc_coordinates().x),
+            static_cast<uint32_t>(dst_image_dram_buffer->noc_coordinates().y),
+            Wt * Ht,  // Total number of tiles to write to output image
+        });
+
+
+      // Host to Device DRAM Copy
+      EnqueueWriteBuffer(cq, src_image_dram_buffer, inImage.data(), false);
+
+      EnqueueProgram(cq, program, false);
+
+      // Device to Host DRAM Copy
+      EnqueueReadBuffer(cq, dst_image_dram_buffer, outImage.data(), true);
+     
 }
 
 using namespace tt::tt_metal;
@@ -287,8 +323,8 @@ int main(int argc, char** argv) {
         // Configuration for image size and intensity levels.
         constexpr uint32_t W = 32;   // Width of each image.  (User defined)
         constexpr uint32_t H = 32;   // Height of each image. (User defined)
-        constexpr uint32_t I = 999;  // Number of intensity levels (e.g., 256 for 8-bit images).
-        constexpr uint32_t batchSize = 1;
+        constexpr uint32_t I = 9999;  // Number of intensity levels (e.g., 256 for 8-bit images).
+        constexpr uint32_t B = 1;    // Batch Size
 
         // Calculating the total number of tiles in both width and height directions
         uint32_t Wt = W / TILE_WIDTH;
@@ -299,11 +335,11 @@ int main(int argc, char** argv) {
         constexpr uint32_t single_tile_size = 2 * 32 * 32;
 
         // Buffer size for Num_tiles of FP16_B
-        uint32_t dram_buffer_src_size = batchSize * single_tile_size * Wt * Ht;
-        uint32_t dram_buffer_histogram_size = batchSize * single_tile_size * It;
+        uint32_t dram_buffer_src_size = B * single_tile_size * Wt * Ht;
+        uint32_t dram_buffer_histogram_size = B * single_tile_size * It;
 
         // Create a batch of images with random pixel intensities.
-        std::vector<bfloat16> flatImages = create_random_vector_of_bfloat16_integer(dram_buffer_src_size, 100, I, 123);
+        std::vector<bfloat16> flatImages = create_random_vector_of_bfloat16_integer(dram_buffer_src_size, 1000, I, 123);
 
         // print the created vector
         print_vec_of_bfloat16_t(flatImages, Wt * Ht, "histogram tiles");
@@ -312,14 +348,20 @@ int main(int argc, char** argv) {
         std::vector<int> goldenHistogram(I, 0);
 
         // Calculate the golden histogram for the batched images. Running on CPU (Host)
-        calculateHistogramBatched(flatImages, goldenHistogram, I, W * H, batchSize);
+        calculateHistogramBatched(flatImages, goldenHistogram, I, W * H, B);
 
         /* Calling the histogram host program. Read in result into a host vector */
         vector<bfloat16> result_vec(dram_buffer_histogram_size / sizeof(bfloat16));
+        vector<bfloat16> output_vec(dram_buffer_src_size/ sizeof(bfloat16));
         // Print the golden histogram.
         // for (int i = 0; i < I; ++i) {
         //     std::cout << "Intensity " << i << ": " << goldenHistogram[i] << std::endl;
         // }
+
+        histogram1d_single_core(flatImages, result_vec, output_vec, W, H, I, B, device);
+
+        // print the copied vector from device registers onto dram
+        print_vec_of_bfloat16_t(output_vec, Wt * Ht, "histogram tiles");
 
         pass &= CloseDevice(device);
 
