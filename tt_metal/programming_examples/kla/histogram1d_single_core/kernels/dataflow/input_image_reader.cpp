@@ -13,13 +13,14 @@
 
 #include "dataflow_api.h"
 
+// kernel_0 : READER for Copying
 void kernel_main() {
-    uint32_t src_addr  = get_arg_val<uint32_t>(0);
+    uint32_t src_addr  = get_arg_val<uint32_t>(0); // DRAM address
     uint32_t src_noc_x = get_arg_val<uint32_t>(1);
     uint32_t src_noc_y = get_arg_val<uint32_t>(2);
     uint32_t num_tiles = get_arg_val<uint32_t>(3);
 
-    constexpr uint32_t cb_id_in0 = 0;
+    constexpr uint32_t cb_id_in0 = 0;  // First input circular buffer
 
     // ublocks size defined in tiles
     constexpr uint32_t ublock_size_tiles = 1;
@@ -30,7 +31,7 @@ void kernel_main() {
         uint64_t src_noc_addr = get_noc_addr(src_noc_x, src_noc_y, src_addr);
 
         cb_reserve_back(cb_id_in0, ublock_size_tiles);
-        uint32_t l1_write_addr = get_write_ptr(cb_id_in0);
+        uint32_t l1_write_addr = get_write_ptr(cb_id_in0);  // circular buffer address
         noc_async_read(src_noc_addr, l1_write_addr, ublock_size_bytes);
 
         noc_async_read_barrier();

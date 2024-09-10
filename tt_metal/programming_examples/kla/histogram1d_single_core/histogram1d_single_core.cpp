@@ -243,13 +243,13 @@ void histogram1d_single_core(
      */
     KernelHandle input_image_reader_kernel_id = CreateKernel(
         program,
-        "tt_metal/programming_examples/contributed/histogram1d_single_core/kernels/dataflow/input_image_reader.cpp",
+        "tt_metal/programming_examples/kla/histogram1d_single_core/kernels/dataflow/input_image_reader.cpp",
         core,
         DataMovementConfig{.processor = DataMovementProcessor::RISCV_1, .noc = NOC::RISCV_1_default});
 
     KernelHandle output_image_writer_kernel_id = CreateKernel(
         program,
-        "tt_metal/programming_examples/contributed/histogram1d_single_core/kernels/dataflow/output_image_writer.cpp",
+        "tt_metal/programming_examples/kla/histogram1d_single_core/kernels/dataflow/output_image_writer.cpp",
         core,
         DataMovementConfig{.processor = DataMovementProcessor::RISCV_0, .noc = NOC::RISCV_0_default});
 
@@ -260,7 +260,7 @@ void histogram1d_single_core(
 
     auto histogram_single_core_kernel_id = tt_metal::CreateKernel(
         program,
-        "tt_metal/programming_examples/contributed/histogram1d_single_core/kernels/compute/histogram_compute1d.cpp",
+        "tt_metal/programming_examples/kla/histogram1d_single_core/kernels/compute/histogram_compute1d.cpp",
         core,
         tt_metal::ComputeConfig{.math_fidelity = math_fidelity, .compile_args = compute_args}
 
@@ -316,9 +316,9 @@ int main(int argc, char** argv) {
         constexpr int device_id = 0;
         Device* device = CreateDevice(device_id);
         // Configuration for image size and intensity levels.
-        constexpr uint32_t W = 1024;    // Width of each image.  (User defined)
-        constexpr uint32_t H = 1024;    // Height of each image. (User defined)
-        constexpr uint32_t I = 9999;  // Number of intensity levels (e.g., 256 for 8-bit images).
+        constexpr uint32_t W = 32;    // Width of each image.  (User defined)
+        constexpr uint32_t H = 32;    // Height of each image. (User defined)
+        constexpr uint32_t I = 1024;  // Number of intensity levels (e.g., 256 for 8-bit images).
         constexpr uint32_t B = 1;     // Batch Size
 
         // Calculating the total number of tiles in both width and height directions
@@ -334,7 +334,7 @@ int main(int argc, char** argv) {
         uint32_t dram_buffer_histogram_size = B * single_tile_size * It;
 
         // Create a batch of images with random pixel intensities.
-        std::vector<bfloat16> flatImages = create_random_vector_of_bfloat16_integer(dram_buffer_src_size, 1000, I, 123);
+        std::vector<bfloat16> flatImages = create_random_vector_of_bfloat16_integer(dram_buffer_src_size, 1, I, 123);
 
         // print the created vector
         print_vec_of_bfloat16_t(flatImages, Wt * Ht, "Input tiles");
