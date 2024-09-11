@@ -22,12 +22,14 @@
 
 // Compute Kernel : perform greater than logic
 namespace NAMESPACE {
+
 void MAIN {
     uint32_t num_tiles = get_compile_time_arg_val(0);
     const uint32_t oneTile = 1;
 
     unary_op_init_common(tt::CB::c_in0);
-    unary_gt_tile_init();
+    unary_eq_tile_init();
+    // heaviside_tile_init();
     for (uint32_t tile_index = 0; tile_index < num_tiles; ++tile_index) {
         cb_reserve_back(tt::CB::c_out0, oneTile);
         // Acquire the dest register file for updating them
@@ -37,7 +39,9 @@ void MAIN {
         // copy the tile from input circular buffer to dst register index 0
         copy_tile(tt::CB::c_in0, 0, 0);
         // Comparison operation to find the mask of indices which are gt the value 728
-        unary_gt_tile(0, 728);
+        //unary_gt_tile(0, 0x44360000);
+        unary_eq_tile(0, 0x44360000);
+        // heaviside_tile(0, 5);
         // Pack tile from registers onto destination circular buffer
         pack_tile(0, tt::CB::c_out0);
         // move to next tile in circular buffer

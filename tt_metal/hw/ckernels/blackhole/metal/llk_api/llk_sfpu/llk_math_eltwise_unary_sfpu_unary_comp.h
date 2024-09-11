@@ -57,4 +57,19 @@ inline void llk_math_eltwise_unary_sfpu_unary_lt(uint dst_index, uint param0, in
         vector_mode,
         param0);
 }
+
+//Unary Equal to
+template <bool APPROXIMATE>
+inline void llk_math_eltwise_unary_sfpu_unary_eq_init() {
+    llk_math_eltwise_unary_sfpu_init<SfpuType::unary_eq, APPROXIMATE>();
+}
+
+template <bool APPROXIMATE>
+inline void llk_math_eltwise_unary_sfpu_unary_eq(uint dst_index, uint param0, int vector_mode = (int)VectorMode::RC) {
+    llk_math_eltwise_unary_sfpu_params<APPROXIMATE>(
+        ckernel::sfpu::calculate_unary_eq<APPROXIMATE>,
+        dst_index,
+        vector_mode,
+        param0);
+}
 }
