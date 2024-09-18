@@ -16,9 +16,9 @@
 
 void generate_bcast_scaler() {
     constexpr uint32_t cb_intermed_1 = 25U; // CB id 25 reserved for intermediates
-    uint32_t scaler = 1;
+    uint32_t scaler = get_arg_val<uint32_t>(4);
     union { float f; uint32_t u; } u; u.u = scaler;
-    //DPRINT << "basic Scaler = " << F32(u.f) << ENDL();
+    DPRINT << "basic Scaler = " << F32(u.f) << ENDL();
     cb_reserve_back(cb_intermed_1, 1);
     auto ptr = reinterpret_cast<uint16_t*>(get_write_ptr(cb_intermed_1));
     for (int j = 0; j < 1024; j++)

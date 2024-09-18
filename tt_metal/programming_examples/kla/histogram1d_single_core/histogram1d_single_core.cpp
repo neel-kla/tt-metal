@@ -152,6 +152,7 @@ void histogram1d_single_core(
     uint32_t H,
     uint32_t I,
     uint32_t B,
+    float scaler,
     Device* device) {
     /*
      * Setup program to execute along with its buffers and kernels to use
@@ -218,7 +219,7 @@ void histogram1d_single_core(
      * input tiles count is = 2 because it's single tile process, and double-buffer
      */
     uint32_t src0_cb_index = CB::c_in0;  // 0
-    uint32_t num_input_tiles = 2;
+    uint32_t num_input_tiles = 4;
     CircularBufferConfig cb_src0_config =
         CircularBufferConfig(num_input_tiles * single_tile_size, {{src0_cb_index, cb_data_format}})
             .set_page_size(src0_cb_index, single_tile_size);
@@ -231,19 +232,19 @@ void histogram1d_single_core(
     auto cb_src1 = tt_metal::CreateCircularBuffer(program, core, cb_src1_config);
 
     uint32_t output_cb_index = CB::c_out1;  // 17 output operands start at index 17
-    uint32_t num_output_tiles = 2;
+    uint32_t num_output_tiles = 4;
     CircularBufferConfig cb_output_config =
         CircularBufferConfig(num_output_tiles * single_tile_size, {{output_cb_index, cb_data_format}})
             .set_page_size(output_cb_index, single_tile_size);
     auto cb_output = tt_metal::CreateCircularBuffer(program, core, cb_output_config);
 
     uint32_t intermed_cb_index0 = CB::c_intermed0;
-    CircularBufferConfig cb_temp_reduce_tile_config0 = tt_metal::CircularBufferConfig(2 * single_tile_size, {{intermed_cb_index0, cb_data_format}})
+    CircularBufferConfig cb_temp_reduce_tile_config0 = tt_metal::CircularBufferConfig(4 * single_tile_size, {{intermed_cb_index0, cb_data_format}})
         .set_page_size(CB::c_intermed0, single_tile_size);
     auto cb_temp_reduce_tile0 = tt_metal::CreateCircularBuffer(program, core, cb_temp_reduce_tile_config0);
 
     uint32_t intermed_cb_index1 = CB::c_intermed1;
-    CircularBufferConfig cb_temp_reduce_tile_config1 = tt_metal::CircularBufferConfig(2 * single_tile_size, {{intermed_cb_index1, cb_data_format}})
+    CircularBufferConfig cb_temp_reduce_tile_config1 = tt_metal::CircularBufferConfig(4 * single_tile_size, {{intermed_cb_index1, cb_data_format}})
         .set_page_size(CB::c_intermed1, single_tile_size);
     auto cb_temp_reduce_tile1 = tt_metal::CreateCircularBuffer(program, core, cb_temp_reduce_tile_config1);
 
@@ -300,6 +301,7 @@ void histogram1d_single_core(
             static_cast<uint32_t>(src_image_dram_buffer->noc_coordinates().x),
             static_cast<uint32_t>(src_image_dram_buffer->noc_coordinates().y),
             Wt * Ht,
+            *reinterpret_cast<uint32_t*>(&scaler)
         });
 
     SetRuntimeArgs(
@@ -340,6 +342,9 @@ int main(int argc, char** argv) {
         constexpr uint32_t H = 32;    // Height of each image. (User defined)
         constexpr uint32_t I = 1024;  // Number of intensity levels (e.g., 256 for 8-bit images).
         constexpr uint32_t B = 1;     // Batch Size
+        float scaler = 1.0f;   // To be used with the reduction tile logic to multiply the input by scale and perform reduction
+        bfloat16 bfloat_scaler_value = bfloat16(scaler);
+        uint32_t packed_scaler_value = pack_two_bfloat16_into_uint32({bfloat_scaler_value, bfloat_scaler_value});
 
         // Calculating the total number of tiles in both width and height directions
         uint32_t Wt = W / TILE_WIDTH;
@@ -373,7 +378,7 @@ int main(int argc, char** argv) {
         //     std::cout << "Intensity " << i << ": " << goldenHistogram[i] << std::endl;
         // }
 
-        histogram1d_single_core(flatImages, result_vec, output_vec, W, H, I, B, device);
+        histogram1d_single_core(flatImages, result_vec, output_vec, W, H, I, B, scaler, device);
 
         // print the copied vector from device registers onto dram
         print_vec_of_bfloat16_t(output_vec, Wt * Ht, "Output tiles");
