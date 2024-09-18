@@ -230,12 +230,22 @@ void histogram1d_single_core(
             .set_page_size(src1_cb_index, single_tile_size);
     auto cb_src1 = tt_metal::CreateCircularBuffer(program, core, cb_src1_config);
 
-    uint32_t output_cb_index = CB::c_out1;  // 17 output operands start at index 16
+    uint32_t output_cb_index = CB::c_out1;  // 17 output operands start at index 17
     uint32_t num_output_tiles = 2;
     CircularBufferConfig cb_output_config =
         CircularBufferConfig(num_output_tiles * single_tile_size, {{output_cb_index, cb_data_format}})
             .set_page_size(output_cb_index, single_tile_size);
     auto cb_output = tt_metal::CreateCircularBuffer(program, core, cb_output_config);
+
+    uint32_t intermed_cb_index0 = CB::c_intermed0;
+    CircularBufferConfig cb_temp_reduce_tile_config0 = tt_metal::CircularBufferConfig(2 * single_tile_size, {{intermed_cb_index0, cb_data_format}})
+        .set_page_size(CB::c_intermed0, single_tile_size);
+    auto cb_temp_reduce_tile0 = tt_metal::CreateCircularBuffer(program, core, cb_temp_reduce_tile_config0);
+
+    uint32_t intermed_cb_index1 = CB::c_intermed1;
+    CircularBufferConfig cb_temp_reduce_tile_config1 = tt_metal::CircularBufferConfig(2 * single_tile_size, {{intermed_cb_index1, cb_data_format}})
+        .set_page_size(CB::c_intermed1, single_tile_size);
+    auto cb_temp_reduce_tile1 = tt_metal::CreateCircularBuffer(program, core, cb_temp_reduce_tile_config1);
 
     /*
      * Specify data movement kernels for reading/writing data to/from
@@ -265,7 +275,17 @@ void histogram1d_single_core(
         tt_metal::ComputeConfig{.math_fidelity = math_fidelity, .compile_args = compute_args}
 
     );
-    std::cout << "Batch size" << B << std::endl;
+
+    // auto reduction_single_core_kernel_id = tt_metal::CreateKernel(
+    //     program,
+    //     "tt_metal/programming_examples/kla/histogram1d_single_core/kernels/compute/reduce_bins.cpp",
+    //     core,
+    //     tt_metal::ComputeConfig{.math_fidelity = math_fidelity, .compile_args = compute_args}
+
+    // );
+
+
+    // std::cout << "Batch size" << B << std::endl;
     /*
      * Configure program and runtime kernel arguments, then execute.
      */
