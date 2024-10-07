@@ -30,7 +30,7 @@ Note the current compatability matrix:
 
 ```sh
 sudo apt update
-sudo apt install software-properties-common=0.99.9.12 build-essential=12.8ubuntu1.1 python3.8-venv libhwloc-dev graphviz patchelf cmake=3.16.3-1ubuntu1.20.04.1 ninja-build
+sudo apt install software-properties-common=0.99.9.12 build-essential=12.8ubuntu1.1 python3.8-venv libhwloc-dev graphviz cmake=3.16.3-1ubuntu1.20.04.1 ninja-build
 
 wget https://apt.llvm.org/llvm.sh
 chmod u+x llvm.sh
@@ -116,11 +116,17 @@ export PYTHONPATH=$(pwd)
 source python_env/bin/activate
 ```
 
+where `ARCH_NAME` is one of `grayskull`, `wormhole_b0`, or `blackhole`,
+depending on your Tenstorrent card type.
+
 > [!NOTE]
 >
 > Note about Python environments: You do not have to use `create_venv.sh`. If you
 > are less familiar with Python and its various environment tools, just use
-> `create_venv.sh` as shown above and the pre-built environment.
+> `create_venv.sh` as shown above and the pre-built environment. If you choose
+> to install in your custom environment, please note that you may run into
+> compatibility issues between dependencies. It is up to the user to ensure
+> that all the packages in their environment are compatible with each other.
 >
 > If you do choose to manage your own environment, please note that you must
 > use Pip 20.1.1 or lower to install this project. This is the highest version
@@ -140,15 +146,29 @@ to install with `pip`:
 pip install <wheel_file.whl>
 ```
 
-If you are going to try our pre-built models in `models/`, then you must also
-further install their required dependencies and environment variables:
+4. (For models users only) Set up environment for models
+
+If you are going to try our pre-built models in `models/`, then you must execute
+the following to:
+
+- install their required dependencies
+- set appropriate environment variables
+- set the CPU performance governor to ensure high performance on the host
 
 ```sh
 export PYTHONPATH=$(pwd)
 pip install -r tt_metal/python_env/requirements-dev.txt
+sudo apt-get install cpufrequtils
+sudo cpupower frequency-set -g performance
 ```
 
-4. Start coding
+5. Start coding
+
+To verify your installation, try the executing an example:
+
+```
+python3 -m ttnn.examples.usage.run_op_on_device
+```
 
 You are all set! Visit the [TT-NN Basic examples page](https://docs.tenstorrent.com/ttnn/latest/ttnn/usage.html#basic-examples) or get started with [simple kernels on TT-Metalium](https://docs.tenstorrent.com/tt-metalium/latest/tt_metal/examples/index.html).
 

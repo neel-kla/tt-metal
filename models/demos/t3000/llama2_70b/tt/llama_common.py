@@ -9,7 +9,6 @@ import re
 from typing import Tuple
 import numpy as np
 import torch
-from torch import nn
 import ttnn
 from models.utility_functions import tt2torch_tensor, torch2tt_tensor
 from loguru import logger
@@ -18,11 +17,11 @@ from models.demos.t3000.llama2_70b.reference.llama.llama.generation import (
     load_chunked_checkpoints,
     load_sharded_checkpoints,
 )
-import pytest
 from models.demos.t3000.llama2_70b.tt.model_config import get_model_config
 
 MAX_SEQ_LEN = 4096
 MAX_SEQ_LEN_LLAMA3 = 8192
+MAX_SEQ_LEN_LLAMA3_1 = 128 * 1024
 BASE_URL = "layers"
 UNIT_TEST_N_LAYER = 1
 UNIT_TEST_LAYER_NUM = 0
@@ -119,16 +118,12 @@ def should_skip_model_load():
     return skip_model_load
 
 
-def setup_llama_env(llama_version="llama3", batch=32, seq_len=1, n_devices=8, max_batch_size=32, max_context_len=4096):
+def setup_llama_env(llama_version="llama3", max_batch_size=32, max_context_len=4096):
     if os.getenv("CI") == "true":
         if llama_version == "llama3":
             ckpt_dir = "/mnt/MLPerf/tt_dnn-models/llama-3/llama-3-70b-repacked/"
             tokenizer_path = "/mnt/MLPerf/tt_dnn-models/llama-3/tokenizer.model"
             cache_path = Path("/mnt/MLPerf/tt_dnn-models/llama-3/llama-data-cache/weights-cache-3")
-        elif llama_version == "llama3-tg":
-            ckpt_dir = "/mnt/MLPerf/tt_dnn-models/llama-3/llama-3-70b-repacked/"
-            tokenizer_path = "/mnt/MLPerf/tt_dnn-models/llama-3/tokenizer.model"
-            cache_path = Path("/mnt/MLPerf/tt_dnn-models/llama-3/llama-data-cache/weights-cache-tg")
         elif llama_version == "llama3-405b":
             ckpt_dir = "/mnt/MLPerf/tt_dnn-models/llama-3-405b/llama-3-405b-repacked/"
             tokenizer_path = "/mnt/MLPerf/tt_dnn-models/llama-3-405b/tokenizer.model"
@@ -142,12 +137,6 @@ def setup_llama_env(llama_version="llama3", batch=32, seq_len=1, n_devices=8, ma
             ckpt_dir = os.getenv("LLAMA3_CKPT_DIR", "/proj_sw/llama3-data-repacked/llama-3-70b/")
             tokenizer_path = os.getenv("LLAMA3_TOKENIZER_PATH", "/proj_sw/llama3-data-repacked/tokenizer.model")
             cache_path = Path(os.getenv("LLAMA3_CACHE_PATH", "/proj_sw/llama-cache/llama-3-70b"))
-        elif llama_version == "llama3-tg":
-            ckpt_dir = os.getenv("LLAMA3_CKPT_DIR", "/proj_sw/user_dev/llama3-data-repacked/llama-3-70b/")
-            tokenizer_path = os.getenv(
-                "LLAMA3_TOKENIZER_PATH", "/proj_sw/user_dev/llama3-data-repacked/tokenizer.model"
-            )
-            cache_path = Path(os.getenv("LLAMA3_CACHE_PATH", "/proj_sw/user_dev/llama3-data-cache/weights-cache-2"))
         elif llama_version == "llama3-405b":
             ckpt_dir = os.getenv("LLAMA3_405B_CKPT_DIR", "/proj_sw/user_dev/llama3-405B-data-repacked/llama-3-405b/")
             tokenizer_path = os.getenv(
@@ -175,9 +164,6 @@ def setup_llama_env(llama_version="llama3", batch=32, seq_len=1, n_devices=8, ma
 
     model_config = get_model_config(
         llama_version=llama_version,
-        batch=batch,
-        seq_len=seq_len,
-        num_devices=n_devices,
         max_batch_size=max_batch_size,
         max_context_len=max_context_len,
     )
@@ -191,7 +177,7 @@ def check_mesh_device(t3k_mesh_device, model_config):
         model_config["NUM_DEVICES"],
     )
 
-    compute_grid_size = t3k_mesh_device.get_device(0).compute_with_storage_grid_size()
+    compute_grid_size = t3k_mesh_device.compute_with_storage_grid_size()
     assert not (
         compute_grid_size.x < model_config["MAX_GRID_SIZE"][0] or compute_grid_size.y < model_config["MAX_GRID_SIZE"][1]
     ), ("Requires grid size of at least %d to run", model_config["MAX_GRID_SIZE"])
@@ -369,7 +355,9 @@ def get_rotation_mat_prefill(rot_mat, start_pos, seqlen, batch):
 
 
 def get_rotation_mat(rot_mat, start_pos, seqlen, batch):
-    position_ids = torch.ones(seqlen, batch, dtype=torch.long) * start_pos
+    if isinstance(start_pos, int):
+        start_pos = torch.ones(seqlen, batch, dtype=torch.long) * start_pos
+    position_ids = start_pos.view(seqlen, batch)
     rot_emb = gather_rotary_emb(rot_mat, position_ids)
     return rot_emb
 

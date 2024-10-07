@@ -14,7 +14,7 @@
 #include "generated_bank_to_noc_coord_mapping.h"
 #include "circular_buffer.h"
 
-#include "debug/status.h"
+#include "debug/waypoint.h"
 #include "debug/dprint.h"
 #include "debug/stack_usage.h"
 // clang-format on
@@ -45,7 +45,6 @@ namespace kernel_profiler {
     uint32_t stackSize __attribute__((used));
     uint32_t sums[SUM_COUNT] __attribute__((used));
     uint32_t sumIDs[SUM_COUNT] __attribute__((used));
-    uint16_t core_flat_id __attribute__((used));
 }
 #endif
 
@@ -75,10 +74,10 @@ inline __attribute__((always_inline)) void signal_ncrisc_completion() {
 int main(int argc, char *argv[]) {
     conditionally_disable_l1_cache();
     DIRTY_STACK_MEMORY();
-    DEBUG_STATUS("I");
+    WAYPOINT("I");
 
     int32_t num_words = ((uint)__ldm_data_end - (uint)__ldm_data_start) >> 2;
-    l1_to_local_mem_copy((uint *)__ldm_data_start, (uint tt_l1_ptr *)MEM_NCRISC_INIT_LOCAL_L1_BASE, num_words);
+    l1_to_local_mem_copy((uint *)__ldm_data_start, (uint tt_l1_ptr *)MEM_NCRISC_INIT_LOCAL_L1_BASE_SCRATCH, num_words);
 
     risc_init();
 
@@ -88,19 +87,19 @@ int main(int argc, char *argv[]) {
 
     // Cleanup profiler buffer incase we never get the go message
     while (1) {
-        DEBUG_STATUS("W");
+        WAYPOINT("W");
         notify_brisc_and_wait();
         DeviceZoneScopedMainN("NCRISC-FW");
 
         uint32_t kernel_config_base = firmware_config_init(mailboxes, ProgrammableCoreType::TENSIX, DISPATCH_CLASS_TENSIX_DM1);
         uint32_t tt_l1_ptr *cb_l1_base = (uint32_t tt_l1_ptr *)(kernel_config_base +
-            mailboxes->launch.kernel_config.cb_offset);
-        setup_cb_read_write_interfaces(cb_l1_base, 0, mailboxes->launch.kernel_config.max_cb_index, true, true, false);
+            mailboxes->launch[mailboxes->launch_msg_rd_ptr].kernel_config.cb_offset);
+        setup_cb_read_write_interfaces(cb_l1_base, 0, mailboxes->launch[mailboxes->launch_msg_rd_ptr].kernel_config.max_cb_index, true, true, false);
 
-        DEBUG_STATUS("R");
+        WAYPOINT("R");
         kernel_init();
         RECORD_STACK_USAGE();
-        DEBUG_STATUS("D");
+        WAYPOINT("D");
 
         signal_ncrisc_completion();
     }

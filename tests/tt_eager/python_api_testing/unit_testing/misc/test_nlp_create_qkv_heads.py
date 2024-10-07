@@ -10,7 +10,6 @@ from models.utility_functions import is_grayskull
 import torch
 import ttnn
 
-
 """
 Falcon-7B shapes + functionality
 """
@@ -37,9 +36,9 @@ def run_nlp_create_qkv_heads_falcon7b_test(batch, seq_len, dtype, in0_mem_config
     logger.debug(f"k: {k.memory_config().buffer_type} and {k.get_dtype()}")
     logger.debug(f"v: {v.memory_config().buffer_type} and {v.get_dtype()}")
 
-    assert list(q.get_legacy_shape()) == [batch, 71, seq_len, 64]
-    assert list(k.get_legacy_shape()) == [batch, 1, seq_len, 64]
-    assert list(v.get_legacy_shape()) == [batch, 1, seq_len, 64]
+    assert list(q.shape.with_tile_padding()) == [batch, 71, seq_len, 64]
+    assert list(k.shape.with_tile_padding()) == [batch, 1, seq_len, 64]
+    assert list(v.shape.with_tile_padding()) == [batch, 1, seq_len, 64]
 
     pyt_got_back_rm_q = tt2torch_tensor(q)
     pyt_got_back_rm_k = tt2torch_tensor(k)
@@ -174,12 +173,12 @@ def run_nlp_create_qkv_heads_test(
     logger.debug(f"k: {k.memory_config().buffer_type} and {k.get_dtype()}")
     logger.debug(f"v: {v.memory_config().buffer_type} and {v.get_dtype()}")
 
-    assert list(q.get_legacy_shape()) == [batch, num_q_heads, seq_len, head_dim]
+    assert list(q.shape.with_tile_padding()) == [batch, num_q_heads, seq_len, head_dim]
     if transpose_k_heads:
-        assert list(k.get_legacy_shape()) == [batch, num_kv_heads, head_dim, seq_len]
+        assert list(k.shape.with_tile_padding()) == [batch, num_kv_heads, head_dim, seq_len]
     else:
-        assert list(k.get_legacy_shape()) == [batch, num_kv_heads, seq_len, head_dim]
-    assert list(v.get_legacy_shape()) == [batch, num_kv_heads, seq_len, head_dim]
+        assert list(k.shape.with_tile_padding()) == [batch, num_kv_heads, seq_len, head_dim]
+    assert list(v.shape.with_tile_padding()) == [batch, num_kv_heads, seq_len, head_dim]
 
     pyt_got_back_rm_q = tt2torch_tensor(q)
     pyt_got_back_rm_k = tt2torch_tensor(k)
@@ -313,9 +312,7 @@ def run_sharded_nlp_create_qkv_heads_test(
     torch.manual_seed(1234)
     compute_grid_size = device.compute_with_storage_grid_size()
     num_cores = num_kv_heads
-    shard_grid = ttnn.CoreRangeSet(
-        ttnn.experimental.tensor.num_cores_to_corerange_set(num_cores, compute_grid_size, True)
-    )
+    shard_grid = ttnn.CoreRangeSet(ttnn.num_cores_to_corerange_set(num_cores, compute_grid_size, True))
     q_shape = [seq_len, 1, batch, num_cores, num_q_heads // num_cores * head_dim]
     kv_shape = [seq_len, 1, batch, num_cores, num_kv_heads // num_cores * head_dim]
     Q = torch.randn(q_shape)
@@ -375,9 +372,9 @@ def run_sharded_nlp_create_qkv_heads_test(
         memory_config=out_mem_config,
     )
 
-    assert list(q.get_legacy_shape()) == [seq_len, num_q_heads, batch, head_dim]
-    assert list(k.get_legacy_shape()) == [seq_len, num_kv_heads, batch, head_dim]
-    assert list(v.get_legacy_shape()) == [seq_len, num_kv_heads, batch, head_dim]
+    assert list(q.shape.with_tile_padding()) == [seq_len, num_q_heads, batch, head_dim]
+    assert list(k.shape.with_tile_padding()) == [seq_len, num_kv_heads, batch, head_dim]
+    assert list(v.shape.with_tile_padding()) == [seq_len, num_kv_heads, batch, head_dim]
 
     pyt_got_back_rm_q = tt2torch_tensor(q)
     pyt_got_back_rm_k = tt2torch_tensor(k)

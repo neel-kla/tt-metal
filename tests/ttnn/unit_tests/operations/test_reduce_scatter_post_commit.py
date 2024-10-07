@@ -28,6 +28,58 @@ def is_unsupported_case(input_shape, scatter_dim, math_op, mem_config, num_devic
     return False, ""
 
 
+def run_with_trace(
+    t3k_mesh_device,
+    input_tensor_mesh,
+    scatter_dim,
+    num_links,
+    math_op,
+    output_mem_config,
+    n_worker,
+    n_buffer,
+    num_iters,
+):
+    # Compile Run
+    logger.info("Compiling model")
+    output_tensor_mesh = ttnn.reduce_scatter(
+        input_tensor_mesh,
+        scatter_dim=scatter_dim,
+        math_op=math_op,
+        num_links=num_links,
+        memory_config=output_mem_config,
+        num_workers=n_worker,
+        num_buffers_per_channel=n_buffer,
+    )
+    for device_id in t3k_mesh_device.get_device_ids():
+        ttnn.synchronize_device(t3k_mesh_device.get_device(device_id))
+
+    # Capture trace
+    logger.info("Capturing trace")
+    trace_id = ttnn.begin_trace_capture(t3k_mesh_device, cq_id=0)
+    for i in range(num_iters):
+        output_tensor_mesh = ttnn.reduce_scatter(
+            input_tensor_mesh,
+            scatter_dim=scatter_dim,
+            math_op=math_op,
+            num_links=num_links,
+            memory_config=output_mem_config,
+            num_workers=n_worker,
+            num_buffers_per_channel=n_buffer,
+        )
+    ttnn.end_trace_capture(t3k_mesh_device, trace_id, cq_id=0)
+    for device_id in t3k_mesh_device.get_device_ids():
+        ttnn.synchronize_device(t3k_mesh_device.get_device(device_id))
+
+    # Run the op
+    logger.info("Starting Trace perf test...")
+    ttnn.execute_trace(t3k_mesh_device, trace_id, blocking=False)
+    ttnn.release_trace(t3k_mesh_device, trace_id)
+    for device_id in t3k_mesh_device.get_device_ids():
+        ttnn.synchronize_device(t3k_mesh_device.get_device(device_id))
+
+    return output_tensor_mesh
+
+
 def run_reduce_scatter_test(
     t3k_mesh_device,
     num_devices,
@@ -42,6 +94,7 @@ def run_reduce_scatter_test(
     function_level_defaults,
     enable_async=True,
     num_iters=1,
+    topology=ttnn.Topology.Ring,
 ):
     if len(t3k_mesh_device.get_device_ids()) != 8:
         pytest.skip("Not T3000!")
@@ -54,8 +107,7 @@ def run_reduce_scatter_test(
     if is_known_failure:
         pytest.skip(f"Skipping unsupported case {message}.")
 
-    for device_id in t3k_mesh_device.get_device_ids():
-        t3k_mesh_device.get_device(device_id).enable_async(enable_async)
+    t3k_mesh_device.enable_async(enable_async)
     if enable_async:
         logger.info(f"Using Async Mode for Reduce Scatter Op Dispatch")
 
@@ -90,6 +142,7 @@ def run_reduce_scatter_test(
             math_op=math_op,
             num_links=num_links,
             memory_config=mem_config,
+            topology=topology,
         )
 
         for device_id in t3k_mesh_device.get_device_ids():
@@ -166,7 +219,7 @@ def run_reduce_scatter_test(
 )
 @pytest.mark.parametrize("math_op", [ttnn.ReduceType.Sum])
 @pytest.mark.parametrize("enable_async", [True])
-def test_reduce_scatter_post_commit(
+def test_ring_reduce_scatter_post_commit(
     t3k_mesh_device,
     num_devices,
     per_chip_output_shape,
@@ -198,6 +251,67 @@ def test_reduce_scatter_post_commit(
     )
 
 
+# ~2:45 extra time in the current state
+@pytest.mark.timeout(120)
+@pytest.mark.parametrize(
+    "num_devices, num_links",
+    [
+        (8, 1),
+    ],
+)
+@pytest.mark.parametrize(
+    "per_chip_output_shape, scatter_dim, layout",
+    [
+        ([1, 1, 32, 32 * 8], 3, ttnn.TILE_LAYOUT),
+    ],
+)
+@pytest.mark.parametrize(
+    "input_dtype",
+    [
+        ttnn.bfloat16,
+    ],
+)
+@pytest.mark.parametrize(
+    "mem_config",
+    [
+        ttnn.MemoryConfig(buffer_type=ttnn.BufferType.DRAM),
+    ],
+)
+@pytest.mark.parametrize("math_op", [ttnn.ReduceType.Sum])
+@pytest.mark.parametrize("enable_async", [True])
+def test_line_reduce_scatter_post_commit(
+    t3k_mesh_device,
+    num_devices,
+    per_chip_output_shape,
+    scatter_dim,
+    num_links,
+    math_op,
+    input_dtype,
+    layout,
+    mem_config,
+    use_program_cache,
+    function_level_defaults,
+    enable_async,
+    num_iters=1,
+):
+    run_reduce_scatter_test(
+        t3k_mesh_device,
+        num_devices,
+        per_chip_output_shape,
+        scatter_dim,
+        num_links,
+        math_op,
+        input_dtype,
+        layout,
+        mem_config,
+        use_program_cache,
+        function_level_defaults,
+        num_iters=num_iters,
+        enable_async=enable_async,
+        topology=ttnn.Topology.Linear,
+    )
+
+
 def run_reduce_scatter_sharded_test(
     t3k_mesh_device,
     num_devices,
@@ -215,14 +329,16 @@ def run_reduce_scatter_sharded_test(
     function_level_defaults,
     enable_async=True,
     num_iters=1,
+    n_worker=None,
+    n_buffer=None,
+    trace_mode=False,
 ):
     if len(t3k_mesh_device.get_device_ids()) != 8:
         pytest.skip("Not T3000!")
 
     debug = False
 
-    for device_id in t3k_mesh_device.get_device_ids():
-        t3k_mesh_device.get_device(device_id).enable_async(enable_async)
+    t3k_mesh_device.enable_async(enable_async)
 
     # Generate input tensors
     input_shard_shape = list(output_shard_shape)
@@ -269,19 +385,33 @@ def run_reduce_scatter_sharded_test(
         )
 
     input_tensor_mesh = ttnn.aggregate_as_tensor(tt_input_tensors)
-    # Run the op
-    for i in range(num_iters):
-        output_tensor_mesh = ttnn.reduce_scatter(
-            input_tensor_mesh,
-            scatter_dim=scatter_dim,
-            math_op=math_op,
-            num_links=num_links,
-            memory_config=output_mem_config,
-        )
 
-        for device_id in t3k_mesh_device.get_device_ids():
-            ttnn.synchronize_device(t3k_mesh_device.get_device(device_id))
-        logger.info(f"Done iteration {i}")
+    # Run the op
+    if trace_mode:
+        output_tensor_mesh = run_with_trace(
+            t3k_mesh_device,
+            input_tensor_mesh,
+            scatter_dim,
+            num_links,
+            math_op,
+            output_mem_config,
+            n_worker,
+            n_buffer,
+            num_iters,
+        )
+    else:
+        for i in range(num_iters):
+            output_tensor_mesh = ttnn.reduce_scatter(
+                input_tensor_mesh,
+                scatter_dim=scatter_dim,
+                math_op=math_op,
+                num_links=num_links,
+                memory_config=output_mem_config,
+            )
+
+            for device_id in t3k_mesh_device.get_device_ids():
+                ttnn.synchronize_device(t3k_mesh_device.get_device(device_id))
+            logger.info(f"Done iteration {i}")
 
     # Compute golden
     # TODO: Make it model how reduce scatter actually works for numerical correctness/ordering

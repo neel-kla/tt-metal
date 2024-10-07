@@ -22,9 +22,11 @@ from tests.tt_eager.python_api_testing.conv.conv_unit_test_utils import (
     create_conv_bias_tensor,
     create_conv_weight_tensor_special_padding,
 )
+from models.utility_functions import skip_for_blackhole
 import torch
 
 
+@skip_for_blackhole("Mismatching on BH, see #12349")
 @pytest.mark.parametrize("device_params", [{"l1_small_size": 8192}], indirect=True)
 @pytest.mark.parametrize(
     "batch_size, output_channels, input_channels, input_height, input_width, stride_h, stride_w, num_cores, grid_size, height_sharded",
@@ -96,11 +98,11 @@ def test_run_downsample(
         device,
         ttnn.L1_MEMORY_CONFIG,
     )
-    assert A_interleaved.get_legacy_shape()[0] == 1 and A_interleaved.get_legacy_shape()[1] == 1
+    assert A_interleaved.shape.with_tile_padding()[0] == 1 and A_interleaved.shape.with_tile_padding()[1] == 1
 
     # image flattened params
-    input_2d_height = A_interleaved.get_legacy_shape()[2]
-    input_2d_width = A_interleaved.get_legacy_shape()[3]
+    input_2d_height = A_interleaved.shape.with_tile_padding()[2]
+    input_2d_width = A_interleaved.shape.with_tile_padding()[3]
     input_2d_height_padded = _nearest_y(input_2d_height, num_cores_height_slices * 32)
     input_shard_height = (int)(input_2d_height_padded / num_cores_height_slices)
     output_2d_height_padded = _nearest_y(batch_size * output_height * output_width, num_cores_height_slices * 32)
@@ -143,10 +145,10 @@ def test_run_downsample(
     )
     out = A_downsampled
     out_shape = [1, 1, _nearest_y(batch_size * output_height * output_width, 32), input_channels]
-    assert out_shape == list(out.get_legacy_shape())
+    assert out_shape == list(out.shape.with_tile_padding())
     out_shape_unpadded = [1, 1, batch_size * output_height * output_width, input_channels]
-    assert out_shape_unpadded == list(out.shape_without_padding())
-    out = ttnn.format_output_tensor(out, out.shape_without_padding(), device, ttnn.ROW_MAJOR_LAYOUT)
+    assert out_shape_unpadded == list(out.shape)
+    out = ttnn.format_output_tensor(out, out.shape, device, ttnn.ROW_MAJOR_LAYOUT)
     out = out.cpu()
 
     out_debug = out

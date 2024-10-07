@@ -113,6 +113,16 @@ auto map_execute_on_worker_thread_return_to_launch_op_return(const T&& value) ->
         return value;
     } else if constexpr (std::is_same_v<std::decay_t<decltype(value)>, Tensor>) {
         return {value};
+    } else if constexpr (std::is_same_v<std::decay_t<decltype(value)>, OptionalTensors>) {
+        Tensors output_tensors;
+        auto size = value.size();
+        output_tensors.reserve(size);
+
+        auto dummy_tensor = Tensor();
+        for (auto& val : value) {
+            output_tensors.push_back(val.value_or(dummy_tensor));
+        }
+        return output_tensors;
     } else if constexpr (is_homogenous_tuple<T, Tensor>()) {
         Tensors output_tensors;
         output_tensors.reserve(std::tuple_size_v<T>);
@@ -278,6 +288,19 @@ struct registered_operation_t {
             return output_tensors.at(0);
         } else if constexpr (std::is_same_v<execute_on_worker_thread_return_t, Tensors>) {
             return output_tensors;
+        } else if constexpr (std::is_same_v<execute_on_worker_thread_return_t, OptionalTensors>) {
+            // convert tensor to optional tensor
+            auto size = output_tensors.size();
+            std::vector<std::optional<Tensor>> ret(size);
+
+            auto return_flags = operation_t::create_async_return_flag(std::forward<decltype(args)>(args)...);
+
+            for (uint32_t i = 0 ; i < size; i++) {
+                if (return_flags.at(i)) {
+                    ret[i] = output_tensors.at(i);
+                }
+            }
+            return ret;
         } else if constexpr (detail::is_homogenous_tuple<execute_on_worker_thread_return_t, Tensor>()) {
             return detail::make_tuple_from_vector<execute_on_worker_thread_return_t>(output_tensors);
         } else {

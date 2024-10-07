@@ -123,10 +123,8 @@ auto preprocess_inputs(
 
     return [](const auto &input_tensor_a, const auto &input_tensor_b) {
         if constexpr (detail::is_associative(binary_op_type)) {
-            const auto input_shape_a = input_tensor_a.get_shape();
-            const auto input_shape_b = input_tensor_b.get_shape();
             // Swap tensors if input_tensor_a needs to be broadcasted to input_tensor_b
-            if (tt::tt_metal::compute_volume(input_shape_a) < tt::tt_metal::compute_volume(input_shape_b)) {
+            if (input_tensor_a.get_logical_volume() < input_tensor_b.get_logical_volume()) {
                 return std::make_tuple(input_tensor_b, input_tensor_a);
             }
         }
@@ -213,6 +211,7 @@ Tensor BinaryOperation<binary_op_type>::invoke(
     const std::optional<Tensor> &optional_output_tensor,
     std::optional<unary::FusedActivations> activations,
     std::optional<unary::UnaryWithParam> input_tensor_a_activation) {
+    using namespace tt::constants;
     // Cast Float Scalar to a device tensor
     auto host_buffer = owned_buffer::create<::bfloat16>(static_cast<std::size_t>(TILE_HEIGHT * TILE_WIDTH));
     host_buffer[0] = scalar;

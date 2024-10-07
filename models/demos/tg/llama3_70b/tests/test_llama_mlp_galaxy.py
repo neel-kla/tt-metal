@@ -6,13 +6,12 @@ import pytest
 from loguru import logger
 import torch
 import ttnn
-from ttnn import ListMeshToTensor
 
 from models.demos.t3000.llama2_70b.reference.llama.llama import Llama
 from models.demos.tg.llama3_70b.tt.llama_mlp_galaxy import TtLlamaMLP_galaxy
 from models.utility_functions import skip_for_grayskull
+from models.demos.tg.llama3_70b.tt.llama_common import setup_llama_env
 from models.demos.t3000.llama2_70b.tt.llama_common import (
-    setup_llama_env,
     check_mesh_device,
     MAX_SEQ_LEN,
     BASE_URL,
@@ -39,8 +38,8 @@ class PytorchLlamaMLPModel(torch.nn.Module):
         return result
 
 
-def tt_llama_mlp_prepare_inputs(llama_mlp_model, x):
-    if llama_mlp_model.model_config["LLM_MODE"] == "decode":
+def tt_llama_mlp_prepare_inputs(llama_mlp_model, x, mode):
+    if mode == "decode":
         num_users = 32
         M, K = num_users, llama_mlp_model.model_config["HIDDEN_SIZE"] // llama_mlp_model.cluster_shape[0]
 
@@ -63,7 +62,7 @@ def tt_llama_mlp_prepare_inputs(llama_mlp_model, x):
                 llama_mlp_model.mesh_device, dims=(3, None), cluster_shape=llama_mlp_model.cluster_shape
             ),
         )
-    elif llama_mlp_model.model_config["LLM_MODE"] == "prefill":
+    elif mode == "prefill":
         x_multichip = ttnn.from_torch(
             x,
             dtype=ttnn.bfloat16,
@@ -111,7 +110,8 @@ def run_test_LlamaMLP_inference(
     pt_inp_ids = torch.randint(0, configuration.vocab_size, (batch, seq_len))
     pt_inp = hugging_face_reference_model.tok_embeddings(pt_inp_ids)
     pt_inp_normed = hugging_face_reference_model.layers[UNIT_TEST_LAYER_NUM].ffn_norm(pt_inp)
-    if model_config["LLM_MODE"] == "decode":
+    mode = "decode" if seq_len == 1 else "prefill"
+    if mode == "decode":
         # shape should be (1, seq_len, batch, dim)
         pt_inp_normed = pt_inp_normed.unsqueeze(1).permute(2, 1, 0, 3)
     else:  # prefill
@@ -136,9 +136,8 @@ def run_test_LlamaMLP_inference(
         cache_path=cache_path,
     )
 
-    tt_mlp_input = tt_llama_mlp_prepare_inputs(tt_LlamaMLP_model, tt_inp)
-
-    tt_out = tt_LlamaMLP_model(tt_mlp_input)
+    tt_mlp_input = tt_llama_mlp_prepare_inputs(tt_LlamaMLP_model, tt_inp, mode=mode)
+    tt_out = tt_LlamaMLP_model(tt_mlp_input, mode=mode)
 
     tt_out = ttnn.to_torch(
         tt_out, mesh_composer=ConcatMesh2DToTensor(mesh_device, dims=(3, 1), cluster_shape=cluster_shape)
@@ -166,8 +165,14 @@ def run_test_LlamaMLP_inference(
 )
 @pytest.mark.parametrize(
     "batch, seq_len, pcc",
-    [(32, 1, 0.9997), (1, 256, 0.9995)],
-    ids=["decode", "prefill"],
+    [
+        (32, 1, 0.9997),
+        (1, 256, 0.9995),
+    ],
+    ids=[
+        "decode",
+        "prefill",
+    ],
 )
 @pytest.mark.parametrize(
     "max_batch_size, max_context_len",
@@ -202,8 +207,6 @@ def test_LlamaMLP_inference(
 
     model_config, ckpt_dir, tokenizer_path, cache_path = setup_llama_env(
         llama_version=llama_version,
-        batch=batch,
-        seq_len=seq_len,
         max_batch_size=max_batch_size,
         max_context_len=max_context_len,
     )

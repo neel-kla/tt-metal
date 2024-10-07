@@ -5,7 +5,8 @@
 import pytest
 
 from models.utility_functions import skip_for_grayskull
-from models.demos.t3000.llama2_70b.tt.llama_common import setup_llama_env, check_mesh_device
+from models.demos.tg.llama3_70b.tt.llama_common import setup_llama_env
+from models.demos.t3000.llama2_70b.tt.llama_common import check_mesh_device
 from models.demos.tg.llama3_70b.tests.test_llama_model_galaxy import run_test_LlamaModel_inference
 
 
@@ -24,8 +25,14 @@ from models.demos.tg.llama3_70b.tests.test_llama_model_galaxy import run_test_Ll
 )
 @pytest.mark.parametrize(
     "batch, seq_len",
-    [(32, 1)],
-    ids=["decode"],
+    [
+        (32, 1),
+        (1, 256),
+    ],
+    ids=[
+        "decode",
+        "prefill",
+    ],
 )
 @pytest.mark.parametrize(
     "max_batch_size, max_context_len",
@@ -55,8 +62,6 @@ def test_LlamaModel_inference(
 
     model_config, ckpt_dir, tokenizer_path, cache_path = setup_llama_env(
         llama_version=llama_version,
-        batch=batch,
-        seq_len=seq_len,
         max_batch_size=max_batch_size,
         max_context_len=max_context_len,
     )

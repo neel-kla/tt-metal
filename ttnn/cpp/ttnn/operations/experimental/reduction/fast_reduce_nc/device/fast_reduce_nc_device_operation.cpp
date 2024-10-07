@@ -21,7 +21,7 @@ Tensor _fast_reduce_nc(
     std::optional<const ttnn::DeviceComputeKernelConfig> compute_kernel_config) {
     std::vector<Tensor> output_tensors = {Tensor(operation::get_workers_for_op_output({input}))};
 
-    TT_FATAL(input.storage_type() == StorageType::DEVICE || input.storage_type() == StorageType::MULTI_DEVICE);
+    TT_FATAL(input.storage_type() == StorageType::DEVICE || input.storage_type() == StorageType::MULTI_DEVICE, "Error");
     auto kernel_config_val = init_device_compute_kernel_config(input.device()->arch(), compute_kernel_config, MathFidelity::HiFi4);
 
     operation::launch_op(
@@ -54,9 +54,7 @@ void FastReduceNCDeviceOperation::validate_with_output_tensors(
     tt::operations::primary::check_tensor(output, "FastReduceNC", "output", {DataType::BFLOAT16, DataType::BFLOAT8_B});
 
     // validate input dim
-    auto input_shape = input.get_legacy_shape();
-    auto input_shape_wo_padding = input.get_legacy_shape().without_padding();
-    const auto input_rank = input_shape.rank();
+    const auto input_rank = input.get_logical_shape().rank();
     TT_FATAL(
         (this->dim >= 0 && this->dim <= tt::tt_metal::MAX_NUM_DIMENSIONS - 2),
         "dim must be between 0 and {}.",
@@ -64,20 +62,18 @@ void FastReduceNCDeviceOperation::validate_with_output_tensors(
     TT_FATAL((this->dim < input_rank), "dim must be smaller than input tensor rank {}.", input_rank);
 }
 
-std::vector<tt::tt_metal::Shape> FastReduceNCDeviceOperation::compute_output_shapes(const std::vector<Tensor>& input_tensors) const {
+std::vector<tt::tt_metal::LegacyShape> FastReduceNCDeviceOperation::compute_output_shapes(const std::vector<Tensor>& input_tensors) const {
     const auto& input = input_tensors.at(0);
-    const auto& input_shape = input.get_legacy_shape();
+    const auto& input_shape = input.get_padded_shape();
     const auto input_rank = input_shape.rank();
 
     // keepdim=true
     auto output_shape = input_shape;
-    auto padding = output_shape.padding();
+    auto padding = input.get_padding();
 
     // last 2-dim
     output_shape[this->dim] = 1;
-
-    output_shape = tt::tt_metal::Shape(output_shape, padding);
-    return {output_shape};
+    return {tt::tt_metal::LegacyShape(output_shape.as_vector(), padding)};
 }
 
 std::vector<Tensor> FastReduceNCDeviceOperation::create_output_tensors(

@@ -11,6 +11,7 @@ from tests.sweep_framework.statuses import TestStatus
 from beautifultable import BeautifulTable, STYLE_COMPACT
 from termcolor import colored
 from elastic_config import *
+from sweeps_logger import sweeps_logger as logger
 
 
 @click.group()
@@ -38,7 +39,7 @@ def cli(ctx, module_name, suite_name, vector_id, run_id, elastic, all):
 @click.pass_context
 def vector(ctx):
     if not ctx.obj["module_name"] or not ctx.obj["vector_id"]:
-        print("QUERY: Module name and vector ID are required for test vector lookup.")
+        logger.error("Module name and vector ID are required for test vector lookup.")
         exit(1)
 
     client = Elasticsearch(ctx.obj["elastic"], basic_auth=(ELASTIC_USERNAME, ELASTIC_PASSWORD))
@@ -51,7 +52,7 @@ def vector(ctx):
 @click.pass_context
 def result(ctx):
     if not ctx.obj["module_name"] or not ctx.obj["run_id"]:
-        print("QUERY: Module name and run ID are required for run result lookup.")
+        logger.error("Module name and run ID are required for run result lookup.")
         exit(1)
 
     client = Elasticsearch(ctx.obj["elastic"], basic_auth=(ELASTIC_USERNAME, ELASTIC_PASSWORD))
@@ -71,6 +72,7 @@ def summary(ctx):
         colored("NOT RUN", "light_grey"),
         colored("FAIL (L1 Out of Mem)", "light_red"),
         colored("FAIL (Watcher)", "light_red"),
+        colored("FAIL (Unsupported Device Perf)", "light_red"),
     ]
 
     client = Elasticsearch(ctx.obj["elastic"], basic_auth=(ELASTIC_USERNAME, ELASTIC_PASSWORD))
@@ -117,7 +119,7 @@ def summary(ctx):
         module_name = ctx.obj["module_name"]
         results_index = RESULT_INDEX_PREFIX + module_name
         if not client.indices.exists(index=results_index):
-            print(f"SWEEPS: There are no results for module {module_name}.")
+            logger.error(f"There are no results for module {module_name}.")
             return
         if not ctx.obj["all"]:
             response = client.search(
@@ -175,7 +177,7 @@ def summary(ctx):
         results_index = RESULT_INDEX_PREFIX + module_name
         suite_name = ctx.obj["suite_name"]
         if not client.indices.exists(index=results_index):
-            print(f"SWEEPS: There are no results for module {module_name}.")
+            logger.error(f"There are no results for module {module_name}.")
             return
         if not ctx.obj["all"]:
             response = client.search(
@@ -192,7 +194,7 @@ def summary(ctx):
                 },
             )["aggregations"]["group_by_vector_id"]["buckets"]
             if len(response) == 0:
-                print(f"SWEEPS: There are no results for module {module_name}, suite {suite_name}")
+                logger.error(f"There are no results for module {module_name}, suite {suite_name}")
             for bucket in response:
                 row = []
                 for status in TestStatus:

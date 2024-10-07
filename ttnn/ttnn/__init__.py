@@ -93,7 +93,12 @@ def manage_config(name, value):
     logger.debug(f"Restored ttnn.CONFIG.{name} to {original_value}")
 
 
-from ttnn._ttnn.multi_device import get_device_tensor, get_device_tensors, aggregate_as_tensor
+from ttnn._ttnn.multi_device import (
+    get_device_tensor,
+    get_device_tensors,
+    aggregate_as_tensor,
+    get_t3k_physical_device_ids_ring,
+)
 
 from ttnn._ttnn.events import create_event, record_event, wait_for_event
 
@@ -123,6 +128,7 @@ from ttnn.types import (
     CoreRangeSet,
     CoreRange,
     CoreCoord,
+    Tile,
     Layout,
     ROW_MAJOR_LAYOUT,
     TILE_LAYOUT,
@@ -170,27 +176,8 @@ from ttnn.device import (
 
 from ttnn.profiler import start_tracy_zone, stop_tracy_zone, tracy_message, tracy_frame
 
-from ttnn.multi_device import (
-    MeshDevice,
-    DispatchCoreType,
-    open_mesh_device,
-    close_mesh_device,
-    get_num_pcie_devices,
-    get_num_devices,
-    get_pcie_device_ids,
-    get_device_ids,
-    create_mesh_device,
-    synchronize_devices,
-    TensorToMesh,
-    ShardTensorToMesh,
-    ShardTensor2dMesh,
-    ReplicateTensorToMesh,
-    MeshToTensor,
-    ConcatMeshToTensor,
-    ListMeshToTensor,
-    visualize_mesh_device,
-    ConcatMesh2dToTensor,
-)
+# TODO: remove this after the distributed module is fully integrated
+from ttnn.distributed import *
 
 from ttnn.core import (
     set_printoptions,
@@ -204,6 +191,7 @@ from ttnn.core import (
     dump_memory_config,
     load_memory_config,
     dump_stack_trace_on_segfault,
+    num_cores_to_corerange_set,
 )
 
 import ttnn.reflection
@@ -303,8 +291,12 @@ from ttnn.operations.reduction import (
     ReduceType,
 )
 
-from ttnn.operations.conv2d import Conv2d, Conv2dConfig, get_conv_output_dim, get_conv_padded_input_shape_and_mem_config
-from ttnn.operations.pool import TTPyMaxPool, max_pool2d, max_pool2d_legacy, MaxPool2d, avg_pool2d
+from ttnn.operations.ccl import (
+    Topology,
+)
+
+from ttnn.operations.conv2d import Conv2dConfig, get_conv_output_dim, get_conv_padded_input_shape_and_mem_config
+from ttnn.operations.pool import avg_pool2d
 from ttnn.operations.conv1d import Conv1d, Conv1dConfig
 
 from ttnn.operations.transformer import SDPAProgramConfig

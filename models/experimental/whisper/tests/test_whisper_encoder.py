@@ -14,7 +14,7 @@ from transformers import (
 
 import ttnn
 import pytest
-from models.utility_functions import skip_for_wormhole_b0
+from models.utility_functions import is_wormhole_b0, is_blackhole
 
 from models.utility_functions import (
     torch2tt_tensor,
@@ -92,7 +92,7 @@ def run_whisper_encoder(device, for_audio_classification=False, encoder_layers=1
             output_hidden_states=False,
         )
 
-        logger.debug(f"Encoder returned {ttm_output.last_hidden_state.get_legacy_shape()}")
+        logger.debug(f"Encoder returned {ttm_output.last_hidden_state.shape.with_tile_padding()}")
 
         # TT Output To Torch
         ttm_output_pt = tt2torch_tensor(ttm_output.last_hidden_state)
@@ -111,7 +111,7 @@ def run_whisper_encoder(device, for_audio_classification=False, encoder_layers=1
         assert does_pass
 
 
-@skip_for_wormhole_b0()
+@pytest.mark.skipif(is_wormhole_b0() or is_blackhole(), reason="Unsupported on WH and BH")
 def test_WhipserEncoder_inference(device):
     torch.manual_seed(1234)
     run_whisper_encoder(device=device, for_audio_classification=False)

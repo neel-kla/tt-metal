@@ -86,15 +86,40 @@ if(ENABLE_BUILD_TIME_TRACE)
 endif()
 
 # Default to building everything as a shared lib
-if($ENV{TT_METAL_CREATE_STATIC_LIB})
-    option(BUILD_SHARED_LIBS "Create shared library" OFF)
-else()
-    option(BUILD_SHARED_LIBS "Create shared library" ON)
-endif()
+option(BUILD_SHARED_LIBS "Create shared libraries" ON)
 message(STATUS "Build shared libs: ${BUILD_SHARED_LIBS}")
 
 option(ENABLE_ASAN "Enable build with AddressSanitizer" OFF)
 message(STATUS "Build with ASAN: ${ENABLE_ASAN}")
+
+set(SANITIZER_ENABLED ${ENABLE_ASAN})
+
+option(ENABLE_MSAN "Enable build with MemorySanitizer" OFF)
+message(STATUS "Build with MSAN: ${ENABLE_MSAN}")
+
+if(SANITIZER_ENABLED AND ENABLE_MSAN)
+    message(FATAL_ERROR "Multiple sanitizers are not supported")
+elseif(ENABLE_MSAN)
+    set(SANITIZER_ENABLED ${ENABLE_MSAN})
+endif()
+
+option(ENABLE_TSAN "Enable build with ThreadSanitizer" OFF)
+message(STATUS "Build with TSAN: ${ENABLE_TSAN}")
+
+if(SANITIZER_ENABLED AND ENABLE_TSAN)
+    message(FATAL_ERROR "Multiple sanitizers are not supported")
+elseif(ENABLE_TSAN)
+    set(SANITIZER_ENABLED ${ENABLE_TSAN})
+endif()
+
+option(ENABLE_UBSAN "Enable build with UndefinedBehaviorSanitizer" OFF)
+message(STATUS "Build with UBSAN: ${ENABLE_UBSAN}")
+
+if(SANITIZER_ENABLED AND ENABLE_UBSAN)
+    message(FATAL_ERROR "Multiple sanitizers are not supported")
+endif()
+
+unset(SANITIZER_ENABLED)
 
 include(GNUInstallDirs)
 set(CMAKE_INSTALL_PREFIX "${PROJECT_BINARY_DIR}")
@@ -169,10 +194,19 @@ if(ENABLE_TRACY)
     target_compile_options(compiler_flags INTERFACE -DTRACY_ENABLE -fno-omit-frame-pointer)
     target_link_options(linker_flags INTERFACE -rdynamic)
 endif()
-if(ENABLE_ASAN)
-    target_compile_options(compiler_flags INTERFACE -fsanitize=address)
-    target_link_options(linker_flags INTERFACE -fsanitize=address)
-endif()
+target_compile_options(
+    compiler_flags
+    INTERFACE $<$<BOOL:${ENABLE_ASAN}>:-fsanitize=address>
+              $<$<BOOL:${ENABLE_MSAN}>:-fsanitize=memory>
+              $<$<BOOL:${ENABLE_TSAN}>:-fsanitize=thread>
+              $<$<BOOL:${ENABLE_UBSAN}>:-fsanitize=undefined>)
+target_link_options(
+    linker_flags
+    INTERFACE
+    $<$<BOOL:${ENABLE_ASAN}>:-fsanitize=address>
+    $<$<BOOL:${ENABLE_MSAN}>:-fsanitize=memory>
+    $<$<BOOL:${ENABLE_TSAN}>:-fsanitize=thread>
+    $<$<BOOL:${ENABLE_UBSAN}>:-fsanitize=undefined>)
 
 string(TOUPPER $ENV{ARCH_NAME} ARCH_NAME_DEF)
 target_compile_options(compiler_flags INTERFACE -DARCH_${ARCH_NAME_DEF})
@@ -219,7 +253,11 @@ endif()
 add_subdirectory(${PROJECT_SOURCE_DIR}/tt_metal)
 add_subdirectory(${PROJECT_SOURCE_DIR}/ttnn)
 
-add_subdirectory(${PROJECT_SOURCE_DIR}/tests EXCLUDE_FROM_ALL)
+option(TT_METAL_BUILD_TESTS "Enables build of tt_metal tests" OFF)
+option(TTNN_BUILD_TESTS "Enables build of ttnn tests" OFF)
+if(TT_METAL_BUILD_TESTS OR TTNN_BUILD_TESTS)
+    add_subdirectory(${PROJECT_SOURCE_DIR}/tests)
+endif(TT_METAL_BUILD_TESTS OR TTNN_BUILD_TESTS)
 
 ############################################################################################################################
 # Install targets for build artifacts and pybinds
@@ -239,7 +277,7 @@ install(TARGETS ttnn
 )
 if(WITH_PYTHON_BINDINGS)
     # Install .so into src files for pybinds implementation
-    install(FILES ${PROJECT_BINARY_DIR}/lib/_ttnn.so
+    install(TARGETS ttnn
     DESTINATION ${PROJECT_SOURCE_DIR}/ttnn/ttnn
     COMPONENT tt_pybinds
     )

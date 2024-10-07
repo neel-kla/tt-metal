@@ -90,7 +90,10 @@ void Cluster::detect_arch_and_target() {
         get_string(this->arch_));
 #endif
 
-    TT_FATAL(this->target_type_ == TargetDevice::Silicon or this->target_type_ == TargetDevice::Simulator);
+    TT_FATAL(
+        this->target_type_ == TargetDevice::Silicon or this->target_type_ == TargetDevice::Simulator,
+        "Target type={} is not supported",
+        this->target_type_);
 }
 
 std::filesystem::path get_cluster_desc_yaml() {
@@ -277,7 +280,7 @@ void Cluster::open_driver(
 
         // Adding this check is a workaround for current UMD bug that only uses this getter to populate private metadata
         // that is later expected to be populated by unrelated APIs
-        TT_FATAL(device_driver->get_target_mmio_device_ids().size() == 1);
+        TT_FATAL(device_driver->get_target_mmio_device_ids().size() == 1, "Only one target mmio device id allowed.");
     } else if (this->target_type_ == TargetDevice::Simulator) {
         device_driver = std::make_unique<tt_SimulationDevice>(sdesc_path);
     }
@@ -320,6 +323,16 @@ Cluster::~Cluster() {
 tt_device &Cluster::get_driver(chip_id_t device_id) const {
     chip_id_t mmio_device_id = this->device_to_mmio_device_.at(device_id);
     return *(this->mmio_device_id_to_driver_.at(mmio_device_id));
+}
+
+std::unordered_map<chip_id_t, eth_coord_t> Cluster::get_user_chip_ethernet_coordinates() const {
+    auto user_chip_ethernet_coordinates = this->cluster_desc_->get_chip_locations();
+    if (this->is_galaxy_cluster()) {
+        std::erase_if(user_chip_ethernet_coordinates, [this](const auto& entry) {
+            return this->cluster_desc_->get_board_type(entry.first) != BoardType::GALAXY;
+        });
+    }
+    return user_chip_ethernet_coordinates;
 }
 
 const metal_SocDescriptor &Cluster::get_soc_desc(chip_id_t chip) const {
